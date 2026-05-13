@@ -1,0 +1,123 @@
+%%writefile vector_add.cu
+#include <iostream>
+#include <cuda_runtime.h>
+#include <limits>
+
+using namespace std;
+
+// CUDA Kernel
+__global__ void add(int* A, int* B, int* C, int size) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (tid < size) {
+        C[tid] = A[tid] + B[tid];
+    }
+}
+
+// Print vector
+void print(int* vec, int size) {
+    for (int i = 0; i < size; i++) {
+        cout << vec[i] << " ";
+    }
+    cout << endl;
+}
+
+// Safe integer input
+int getInt(string message) {
+    int value;
+    while (true) {
+        cout << message;
+        cin >> value;
+
+        if (cin.fail()) {
+            cout << "Invalid input! Enter a number.\n";
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        } else if (value <= 0) {
+            cout << "Value must be > 0.\n";
+        } else {
+            return value;
+        }
+    }
+}
+
+// Safe vector input
+void inputVector(int* vec, int size, string name) {
+    cout << "Enter elements of " << name << ":\n";
+
+    for (int i = 0; i < size; i++) {
+        while (true) {
+            cout << name << "[" << i << "] = ";
+            cin >> vec[i];
+
+            if (cin.fail()) {
+                cout << "Invalid input! Enter a number.\n";
+                cin.clear();
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+int main() {
+    int N;
+
+    //Input size
+    N = getInt("Enter size of vectors: ");
+
+    size_t bytes = N * sizeof(int);
+
+    int *A = new int[N];
+    int *B = new int[N];
+    int *C = new int[N];
+
+    //Input vectors
+    inputVector(A, N, "A");
+    inputVector(B, N, "B");
+
+    cout << "\nVector A: ";
+    print(A, N);
+
+    cout << "Vector B: ";
+    print(B, N);
+
+    // Device memory
+    int *d_A, *d_B, *d_C;
+    cudaMalloc(&d_A, bytes);
+    cudaMalloc(&d_B, bytes);
+    cudaMalloc(&d_C, bytes);
+
+    cudaMemcpy(d_A, A, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B, bytes, cudaMemcpyHostToDevice);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+    // Kernel launch
+    add<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
+
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(C, d_C, bytes, cudaMemcpyDeviceToHost);
+
+    cout << "Addition Result: ";
+    print(C, N);
+
+    // Cleanup
+    delete[] A;
+    delete[] B;
+    delete[] C;
+
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return 0;
+}
+
+
+
+!nvcc vector_add.cu -o vector_add
+!./vector_add

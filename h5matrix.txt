@@ -1,0 +1,208 @@
+%%writefile matmul.cu
+
+#include <iostream>
+#include <cuda_runtime.h>
+#include <limits>
+
+using namespace std;
+
+// CUDA Kernel
+__global__ void multiply(int* A, int* B, int* C,
+                         int rowsA, int colsA, int colsB) {
+
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < rowsA && col < colsB) {
+
+        int sum = 0;
+
+        for (int i = 0; i < colsA; i++) {
+            sum += A[row * colsA + i] *
+                   B[i * colsB + col];
+        }
+
+        C[row * colsB + col] = sum;
+    }
+}
+
+// Print Matrix
+void printMatrix(int* matrix, int rows, int cols) {
+
+    for (int i = 0; i < rows; i++) {
+
+        for (int j = 0; j < cols; j++) {
+            cout << matrix[i * cols + j] << " ";
+        }
+
+        cout << endl;
+    }
+
+    cout << endl;
+}
+
+// Safe Integer Input
+int getInt(string message) {
+
+    int value;
+
+    while (true) {
+
+        cout << message;
+        cin >> value;
+
+        if (cin.fail()) {
+
+            cout << "Invalid input! Enter a number.\n";
+
+            cin.clear();
+
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        }
+
+        else if (value <= 0) {
+
+            cout << "Value must be greater than 0.\n";
+        }
+
+        else {
+
+            return value;
+        }
+    }
+}
+
+// Safe Matrix Input
+void inputMatrix(int* mat, int rows, int cols, string name) {
+
+    cout << "\nEnter elements of Matrix " << name << ":\n";
+
+    for (int i = 0; i < rows; i++) {
+
+        for (int j = 0; j < cols; j++) {
+
+            while (true) {
+
+                cout << name << "[" << i << "][" << j << "] = ";
+
+                cin >> mat[i * cols + j];
+
+                if (cin.fail()) {
+
+                    cout << "Invalid input! Enter a number.\n";
+
+                    cin.clear();
+
+                    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                }
+
+                else {
+
+                    break;
+                }
+            }
+        }
+    }
+}
+
+int main() {
+
+    int rowsA, colsA;
+    int rowsB, colsB;
+
+    // Input dimensions
+    rowsA = getInt("Enter rows of Matrix A: ");
+    colsA = getInt("Enter cols of Matrix A: ");
+
+
+    while (true) {
+
+        rowsB = getInt("Enter rows of Matrix B: ");
+        colsB = getInt("Enter cols of Matrix B: ");
+
+        if (colsA != rowsB) {
+
+            cout << "\nInvalid! cols(A) must equal rows(B).\nTry again.\n\n";
+        }
+
+        else {
+
+            break;
+        }
+    }
+
+    // Allocate Host Memory
+    int* A = new int[rowsA * colsA];
+    int* B = new int[rowsB * colsB];
+    int* C = new int[rowsA * colsB];
+
+    // Input Matrices
+    inputMatrix(A, rowsA, colsA, "A");
+    inputMatrix(B, rowsB, colsB, "B");
+
+    // Print Input Matrices
+    cout << "\nMatrix A:\n";
+    printMatrix(A, rowsA, colsA);
+
+    cout << "Matrix B:\n";
+    printMatrix(B, rowsB, colsB);
+
+    // Device Memory
+    int *d_A, *d_B, *d_C;
+
+    cudaMalloc(&d_A, rowsA * colsA * sizeof(int));
+    cudaMalloc(&d_B, rowsB * colsB * sizeof(int));
+    cudaMalloc(&d_C, rowsA * colsB * sizeof(int));
+
+    // Copy Host -> Device
+    cudaMemcpy(d_A, A,
+               rowsA * colsA * sizeof(int),
+               cudaMemcpyHostToDevice);
+
+    cudaMemcpy(d_B, B,
+               rowsB * colsB * sizeof(int),
+               cudaMemcpyHostToDevice);
+
+    // Threads and Blocks
+    int THREADS = 16;
+
+    dim3 threads(THREADS, THREADS);
+
+    dim3 blocks(
+        (colsB + THREADS - 1) / THREADS,
+        (rowsA + THREADS - 1) / THREADS
+    );
+
+    // Launch Kernel
+    multiply<<<blocks, threads>>>(
+        d_A, d_B, d_C,
+        rowsA, colsA, colsB
+    );
+
+    cudaDeviceSynchronize();
+
+    // Copy Device -> Host
+    cudaMemcpy(C, d_C,
+               rowsA * colsB * sizeof(int),
+               cudaMemcpyDeviceToHost);
+
+    // Print Result
+    cout << "Result Matrix:\n";
+
+    printMatrix(C, rowsA, colsB);
+
+    // Cleanup
+    delete[] A;
+    delete[] B;
+    delete[] C;
+
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return 0;
+}
+
+
+!nvcc matmul.cu -o matmul
+!./matmul
